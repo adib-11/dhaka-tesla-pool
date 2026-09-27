@@ -36,21 +36,21 @@ async function main() {
   const zones: { id: number; name: string }[] = (await rafiq('/zones')).body;
   const id = (name: string) => zones.find((z) => z.name === name)!.id;
 
-  const r = await rafiq('/ride-requests', { pickupZoneId: id('Banani'), dropoffZoneId: id('Gulshan 1'), seats: 2 });
-  console.log('8:41 Rafiq books 2 seats to Gulshan 1:', r.status);
-  const accepted = await jashimPhone(`/driver/requests/${r.body.id}/accept`, {});
-  console.log('8:42 Jashim accepts. Bullet seats:', `${accepted.body.seatsTaken}/${accepted.body.capacity}`);
+  const rafiqRequest = await rafiq('/ride-requests', { pickupZoneId: id('Banani'), dropoffZoneId: id('Gulshan 1'), seats: 2 });
+  console.log('8:41 Rafiq books 2 seats to Gulshan 1:', rafiqRequest.status);
+  const acceptedTrip = await jashimPhone(`/driver/requests/${rafiqRequest.body.id}/accept`, {});
+  console.log('8:42 Jashim accepts. Bullet seats:', `${acceptedTrip.body.seatsTaken}/${acceptedTrip.body.capacity}`);
 
-  const n = await nusrat('/ride-requests', { pickupZoneId: id('Banani'), dropoffZoneId: id('Mohakhali') });
-  const s = await shirin('/ride-requests', { pickupZoneId: id('Banani'), dropoffZoneId: id('Gulshan 2') });
+  const nusratRequest = await nusrat('/ride-requests', { pickupZoneId: id('Banani'), dropoffZoneId: id('Mohakhali') });
+  const shirinRequest = await shirin('/ride-requests', { pickupZoneId: id('Banani'), dropoffZoneId: id('Gulshan 2') });
   console.log('8:43 Nusrat and Shirin both want the last seat. Jashim taps Accept on two devices at once…');
 
-  const [a, b] = await Promise.all([
-    jashimPhone(`/driver/requests/${n.body.id}/accept`, {}),
-    jashimTablet(`/driver/requests/${s.body.id}/accept`, {}),
+  const [nusratAccept, shirinAccept] = await Promise.all([
+    jashimPhone(`/driver/requests/${nusratRequest.body.id}/accept`, {}),
+    jashimTablet(`/driver/requests/${shirinRequest.body.id}/accept`, {}),
   ]);
-  console.log('  Nusrat accept:', a.status, a.body?.error ?? 'seated');
-  console.log('  Shirin accept:', b.status, b.body?.error ?? 'seated');
+  console.log('  Nusrat accept:', nusratAccept.status, nusratAccept.body?.error ?? 'seated');
+  console.log('  Shirin accept:', shirinAccept.status, shirinAccept.body?.error ?? 'seated');
   const trip = (await jashimPhone('/driver/trip')).body;
   console.log(`Bullet ends at ${trip.seatsTaken}/${trip.capacity}. Never more.`);
 }
