@@ -11,6 +11,7 @@ import { authRouter } from './routes/auth';
 import { catalogRouter } from './routes/catalog';
 import { driverRouter } from './routes/driver';
 import { passengerRouter } from './routes/passenger';
+import { teslapayRouter } from './routes/teslapay';
 import { tripsRouter } from './routes/trips';
 
 export const logger = pino({ enabled: config.NODE_ENV !== 'test' });
@@ -43,6 +44,7 @@ export function buildApp() {
   // Zones and the fare estimate are readable by anyone: the passenger pages gate on a session.
   app.use(catalogRouter);
   app.use('/ride-requests', passengerRouter);
+  app.use('/teslapay', teslapayRouter);
   app.use('/driver', driverRouter);
   app.use('/trips', tripsRouter);
 
