@@ -1,8 +1,11 @@
-import type { Prisma, TripStatus } from '@prisma/client';
+import type { EventType, Prisma, TripStatus } from '@prisma/client';
 import { prisma } from '../db';
 import { destinationsCompatible, isCompatible, type TripSnapshot } from '../domain/compatibility';
+import { calculateFare } from '../domain/fare';
+import { canMoveRequest, canMoveTrip } from '../domain/transitions';
 import { conflict, notFound, unprocessable } from '../http/errors';
 import { recordEvent } from './events';
+import { settlePayment } from './payments';
 import { driverTripView, meView, tripInclude, zoneView } from './views';
 
 export const ACTIVE_TRIP_STATUSES: TripStatus[] = ['ACCEPTED', 'DRIVER_ARRIVED', 'STARTED'];
@@ -135,6 +138,100 @@ export async function acceptRideRequest(driverId: string, requestId: string) {
       detail: { seatsTaken: claimed[0].seats_taken, capacity: trip.capacity },
     });
     return trip.id;
+  });
+  return getDriverTrip(driverId, tripId);
+}
+
+async function moveTrip(
+  tx: Prisma.TransactionClient,
+  driverId: string,
+  tripId: string,
+  to: TripStatus,
+  event: EventType,
+  data: Prisma.TripUpdateManyMutationInput = {},
+) {
+  const trip = await tx.trip.findFirst({ where: { id: tripId, driverId } });
+  if (!trip) throw notFound('Trip not found');
+  if (!canMoveTrip(trip.status, to)) throw conflict(`Trip is ${trip.status}; it cannot move to ${to}`);
+  const moved = await tx.trip.updateMany({ where: { id: tripId, status: trip.status }, data: { ...data, status: to } });
+  if (moved.count === 0) throw conflict('Trip changed while you were acting; refresh and try again');
+  await recordEvent(tx, { type: event, tripId, actorUserId: driverId, fromStatus: trip.status, toStatus: to });
+  return trip;
+}
+
+export async function arriveAtPickup(driverId: string, tripId: string) {
+  await prisma.$transaction((tx) => moveTrip(tx, driverId, tripId, 'DRIVER_ARRIVED', 'DRIVER_ARRIVED', { arrivedAt: new Date() }));
+  return getDriverTrip(driverId, tripId);
+}
+
+/** Locks every Final Fare. Pool membership cannot change after DRIVER_ARRIVED, so the count is stable. */
+export async function startTrip(driverId: string, tripId: string) {
+  await prisma.$transaction(async (tx) => {
+    const now = new Date();
+    await moveTrip(tx, driverId, tripId, 'STARTED', 'STARTED', { startedAt: now });
+    const matchedRequests = await tx.rideRequest.findMany({ where: { tripId, status: 'MATCHED' } });
+    const pooled = matchedRequests.length >= 2;
+    for (const r of matchedRequests) {
+      const fare = calculateFare({ distanceM: r.distanceM, seats: r.seats, pooled });
+      await tx.rideRequest.update({
+        where: { id: r.id },
+        data: {
+          status: 'IN_PROGRESS',
+          startedAt: now,
+          baseFarePaisa: fare.basePaisa,
+          distanceChargePaisa: fare.distanceChargePaisa,
+          poolDiscountPaisa: fare.poolDiscountPaisa,
+          finalFarePaisa: fare.totalPaisa,
+        },
+      });
+      await recordEvent(tx, {
+        type: 'FARE_LOCKED',
+        tripId,
+        rideRequestId: r.id,
+        actorUserId: driverId,
+        fromStatus: 'MATCHED',
+        toStatus: 'IN_PROGRESS',
+        detail: { ...fare, pooled, passengersOnTrip: matchedRequests.length },
+      });
+    }
+  });
+  return getDriverTrip(driverId, tripId);
+}
+
+export async function dropOff(driverId: string, tripId: string, requestId: string) {
+  await prisma.$transaction(async (tx) => {
+    // Serialise drop-offs on one Trip so exactly one of two concurrent last drop-offs completes it.
+    const locked = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM trips WHERE id = ${tripId}::uuid AND driver_id = ${driverId}::uuid FOR UPDATE`;
+    if (locked.length === 0) throw notFound('Trip not found');
+    const trip = await tx.trip.findUniqueOrThrow({ where: { id: tripId } });
+    if (trip.status !== 'STARTED') throw conflict(`Trip is ${trip.status}; start it before dropping anyone off`);
+
+    const ride = await tx.rideRequest.findFirst({ where: { id: requestId, tripId } });
+    if (!ride) throw notFound('Passenger is not on this trip');
+    if (!canMoveRequest(ride.status, 'COMPLETED')) throw conflict(`This ride is ${ride.status}; it cannot be completed`);
+
+    const now = new Date();
+    await tx.rideRequest.update({ where: { id: requestId }, data: { status: 'COMPLETED', completedAt: now, paidAt: now } });
+    await recordEvent(tx, { type: 'DROPPED_OFF', tripId, rideRequestId: requestId, actorUserId: driverId, fromStatus: 'IN_PROGRESS', toStatus: 'COMPLETED' });
+    await settlePayment(tx, ride, driverId);
+    await tx.tesla.update({ where: { driverId }, data: { currentZoneId: ride.dropoffZoneId } });
+
+    const remainingOnTrip = await tx.rideRequest.count({ where: { tripId, status: 'IN_PROGRESS' } });
+    if (remainingOnTrip === 0) await moveTrip(tx, driverId, tripId, 'COMPLETED', 'TRIP_COMPLETED', { completedAt: now });
+  });
+  return getDriverTrip(driverId, tripId);
+}
+
+/** Before STARTED only. Ride Requests go back to the queue (Requeue) instead of being cancelled. */
+export async function cancelTrip(driverId: string, tripId: string) {
+  await prisma.$transaction(async (tx) => {
+    await moveTrip(tx, driverId, tripId, 'CANCELLED', 'CANCELLED', { cancelledAt: new Date() });
+    const matchedRequests = await tx.rideRequest.findMany({ where: { tripId, status: 'MATCHED' } });
+    await tx.rideRequest.updateMany({ where: { tripId, status: 'MATCHED' }, data: { status: 'REQUESTED', tripId: null, matchedAt: null } });
+    for (const r of matchedRequests) {
+      await recordEvent(tx, { type: 'REQUEUED', tripId, rideRequestId: r.id, actorUserId: driverId, fromStatus: 'MATCHED', toStatus: 'REQUESTED' });
+    }
   });
   return getDriverTrip(driverId, tripId);
 }
