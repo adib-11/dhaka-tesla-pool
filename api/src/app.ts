@@ -8,6 +8,7 @@ import { config } from './config';
 import { prisma } from './db';
 import { errorHandler } from './http/errors';
 import { authRouter } from './routes/auth';
+import { catalogRouter } from './routes/catalog';
 
 export const logger = pino({ enabled: config.NODE_ENV !== 'test' });
 
@@ -35,8 +36,9 @@ export function buildApp() {
     res.json({ status: 'ok' });
   });
 
-  // Routers are mounted here by later tasks.
   app.use('/auth', authRouter);
+  // Zones and the fare estimate are readable by anyone: the passenger pages gate on a session.
+  app.use(catalogRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Route not found' });
