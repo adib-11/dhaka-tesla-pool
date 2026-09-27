@@ -1,10 +1,11 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { api } from '@/lib/api';
+import { api, taka } from '@/lib/api';
 import type { DriverTrip } from '@/lib/types';
 import { PageMessage } from './PageMessage';
 import { StatusBadge } from './StatusBadge';
+import { DropOffButton, TripActions } from './TripActions';
 
 export function CurrentTripPanel() {
   const trip = useQuery({ queryKey: ['driver-trip'], queryFn: () => api<DriverTrip | null>('/driver/trip'), refetchInterval: 3000 });
@@ -24,13 +25,19 @@ export function CurrentTripPanel() {
           {t.passengers.length > 1 && ' · Pool'}
           {t.isSolo && ' · Solo'}
         </p>
+        <TripActions trip={t} />
         <ul className="divide-y">
           {t.passengers.map((p) => (
-            <li key={p.requestId} className="flex items-center justify-between gap-2 py-2">
+            <li key={p.requestId} className="flex flex-wrap items-center justify-between gap-2 py-2">
               <span>
                 {p.passengerName} · {p.seats} seat{p.seats > 1 ? 's' : ''} → {p.dropoff.name}
+                {p.finalFarePaisa !== null && ` · ${taka(p.finalFarePaisa)} ${p.paymentMethod === 'TESLAPAY' ? 'TeslaPay' : 'cash'}`}
               </span>
-              <StatusBadge status={p.status} />
+              {t.status === 'STARTED' && p.status === 'IN_PROGRESS' ? (
+                <DropOffButton tripId={t.id} requestId={p.requestId} name={p.passengerName} />
+              ) : (
+                <StatusBadge status={p.status} />
+              )}
             </li>
           ))}
         </ul>
