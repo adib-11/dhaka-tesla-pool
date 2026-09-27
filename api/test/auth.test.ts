@@ -1,4 +1,5 @@
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CAST } from '../prisma/seed-data';
 import { app, loginAs, resetDb } from './helpers';
@@ -33,6 +34,18 @@ describe('auth', () => {
 
   it('rejects requests without a session', async () => {
     await request(app).get('/auth/me').expect(401);
+  });
+
+  it('treats a signed cookie for a user that no longer exists as 401, not 500', async () => {
+    const token = jwt.sign({ role: 'PASSENGER' }, process.env.JWT_SECRET!, {
+      subject: '00000000-0000-4000-8000-000000000000',
+      expiresIn: '7d',
+    });
+    await request(app).get('/auth/me').set('Cookie', `token=${token}`).expect(401);
+  });
+
+  it('rejects unparseable JSON with 422', async () => {
+    await request(app).post('/auth/login').set('content-type', 'application/json').send('{not json').expect(422);
   });
 
   it('returns Jashim with his Tesla', async () => {
