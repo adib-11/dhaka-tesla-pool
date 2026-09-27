@@ -66,6 +66,20 @@ export function passengerRideView(r: RideWithRelations, coRiders: number | null)
   };
 }
 
+export const eventInclude = { actor: { select: { name: true } } } satisfies Prisma.RideEventInclude;
+
+export function eventView(e: Prisma.RideEventGetPayload<{ include: typeof eventInclude }>) {
+  return {
+    id: e.id,
+    type: e.type,
+    fromStatus: e.fromStatus,
+    toStatus: e.toStatus,
+    detail: e.detail,
+    actorName: e.actor?.name ?? null,
+    createdAt: e.createdAt,
+  };
+}
+
 export const tripInclude = {
   pickupZone: true,
   requests: {

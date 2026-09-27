@@ -6,7 +6,7 @@ import { canMoveRequest, canMoveTrip } from '../domain/transitions';
 import { conflict, notFound, unprocessable } from '../http/errors';
 import { recordEvent } from './events';
 import { settlePayment } from './payments';
-import { driverTripView, meView, tripInclude, zoneView } from './views';
+import { driverTripView, eventInclude, eventView, meView, tripInclude, zoneView } from './views';
 
 export const ACTIVE_TRIP_STATUSES: TripStatus[] = ['ACCEPTED', 'DRIVER_ARRIVED', 'STARTED'];
 
@@ -72,7 +72,8 @@ export async function listCompatibleRequests(driverId: string) {
 export async function getDriverTrip(driverId: string, tripId: string) {
   const trip = await prisma.trip.findFirst({ where: { id: tripId, driverId }, include: tripInclude });
   if (!trip) throw notFound('Trip not found');
-  return driverTripView(trip);
+  const events = await prisma.rideEvent.findMany({ where: { tripId }, include: eventInclude, orderBy: { id: 'asc' } });
+  return { ...driverTripView(trip), events: events.map(eventView) };
 }
 
 export async function listDriverTrips(driverId: string) {
