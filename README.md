@@ -12,9 +12,9 @@ Share a seat. Split the fare. Survive Dhaka traffic.
 
 ## The problem
 
-Nusrat, Rafiq and Shirin all travel from Banani towards Mohakhali and Gulshan 1
-around 8:41 AM, but each books a separate three-wheeler, so three "Teslas" burn
-fuel to carry one person each. Dhaka Tesla Pool lets a Driver put several Ride
+Nusrat and Rafiq both leave Banani around 8:41 AM — Nusrat to Mohakhali, Rafiq
+to Gulshan 1 — yet each books a separate three-wheeler, so two "Teslas" burn
+fuel to carry one person apiece. Dhaka Tesla Pool lets a Driver put several Ride
 Requests onto one Trip in a vehicle with fixed seats: passengers share the ride,
 each pays their own fare, and a **Pool Discount** rewards the sharing. The hard
 part is not the screens — it is never overbooking a seat when two passengers
@@ -27,7 +27,7 @@ accept at the same instant, and keeping every fare and status auditable.
 - Sign up (৳500 TeslaPay welcome credit), log in, log out.
 - See the Estimated Fare for a Zone pair, shown solo and "if pooled", before booking.
 - Request 1–3 seats, with or without sharing, paying cash or TeslaPay.
-- Watch the live status: waiting → matched → in progress → completed.
+- Watch the live status move through `REQUESTED`, `MATCHED`, `IN_PROGRESS` and `COMPLETED`.
 - Cancel while the rules allow, with the seat freed immediately.
 - Ride history, a per-ride receipt, and a Timeline of every Ride Event.
 - A TeslaPay page: balance plus the full ledger.
@@ -69,8 +69,8 @@ The web app is a thin client: every call goes to same-origin `/api/*` and Next.j
 rewrites that to the API. The session cookie is therefore first-party and no CORS
 configuration is needed. Inside the API, `src/domain` holds the pure rules,
 `src/services` owns the transactions and the Ride Events, and only Prisma (plus
-one documented raw statement, ADR 0001) touches Postgres. Status reaches the
-browser by polling every 3 seconds.
+one documented raw statement, [ADR 0001](docs/adr/0001-atomic-seat-claim.md)) touches
+Postgres. Status reaches the browser by polling every 3 seconds.
 
 ### Data model
 
@@ -166,7 +166,7 @@ them, so an invalid transition is a `409`, not a silent write.
 | Node 22 + TypeScript | Go, Python/FastAPI | One language across web and API; types catch shape drift between the Prisma models, the services and the web pages | A CPU-bound matching service, or a team that already lives elsewhere |
 | Express 5 | Fastify, NestJS | Smallest thing that mounts routers and middleware; the domain logic stays in plain functions, not decorators | A larger surface needing schema-first routing and built-in validation |
 | PostgreSQL 16 | MySQL, SQLite | Partial unique indexes and `CHECK` constraints are what make the concurrency rules enforceable in the database itself; SQLite would lose them | Write volume beyond one primary, or an existing managed MySQL |
-| Prisma 6 | Drizzle, Kysely, raw SQL | Typed models and migrations for the 7 tables, with one raw statement where the expressiveness is needed (ADR 0001) | Pinned at 6.x on purpose; 7.x changes the generator and requires driver adapters |
+| Prisma 6 | Drizzle, Kysely, raw SQL | Typed models and migrations for the 7 tables, with one raw statement where the expressiveness is needed ([ADR 0001](docs/adr/0001-atomic-seat-claim.md)) | Pinned at 6.x on purpose; 7.x changes the generator and requires driver adapters |
 | zod | Joi, express-validator | One schema per request body/query, and the parse error already carries the field issues we return as 422 | Nothing soon |
 | JWT in an httpOnly cookie + bcryptjs | Session table, Auth0/Clerk | No third-party dependency, no extra table, and the cookie survives the same-origin `/api/*` rewrite | Real driver document verification, SSO, or multi-device session revocation |
 | Next.js App Router + Tailwind + shadcn/ui | Vite + React, Remix | The rewrite proxy keeps the cookie first-party; Tailwind/shadcn give accessible primitives without a design system to maintain | A native mobile client consuming the API directly |
@@ -216,7 +216,10 @@ them, so an invalid transition is a `409`, not a silent write.
 **Prerequisites:** Docker (with Compose) for the easy path, or Node 22 + a local
 PostgreSQL 16 for the manual path.
 
-**Environment variables** (`.env.example`, copy to `.env` — never commit real secrets):
+**Environment variables.** `.env.example` covers the Postgres and API settings —
+copy it to `.env` and never commit real secrets. `NEXT_PUBLIC_DEMO_MODE` and
+`API_URL` are build-time values for the web app, supplied by compose locally and
+by the host in production, so they are not read from `.env`:
 
 | Key | Purpose | Local default |
 | --- | --- | --- |
@@ -271,7 +274,7 @@ target with `TEST_DATABASE_URL` if you keep your test database elsewhere.
 | --- | --- | --- |
 | Database | Neon (free), `aws-ap-southeast-1` (Singapore, closest to Dhaka) | Use the **direct** (non-pooled) connection string ending in `?sslmode=require`; Prisma migrations need a direct connection |
 | API | Render (free web service) | Root directory `api`, runtime Docker, health check path `/health`, branch `release/v1.0.0`; env `DATABASE_URL`, `JWT_SECRET` (`openssl rand -base64 48`) and `COOKIE_SECURE=true`. The container runs `prisma migrate deploy`, then the idempotent seed, then the server, so the demo cast exists on first boot |
-| Web | Vercel (Hobby) | Root directory `web`; build-time env `API_URL=https://dhaka-tesla-pool-api-sgmc.onrender.com` and `NEXT_PUBLIC_DEMO_MODE=true`. Both are read during `next build`, so the `/api/*` rewrite and the demo buttons are baked into the output |
+| Web | Vercel (Hobby) | Root directory `web`, production branch `release/v1.0.0`; build-time env `API_URL=https://dhaka-tesla-pool-api-sgmc.onrender.com` and `NEXT_PUBLIC_DEMO_MODE=true`. Both are read during `next build`, so the `/api/*` rewrite and the demo buttons are baked into the output |
 
 `COOKIE_SECURE` must be `true` wherever the app is served over HTTPS; leave it
 `false` for `http://localhost` so Safari keeps the cookie. `API_URL` is required
@@ -285,7 +288,7 @@ also shows one-click buttons for each of them when `NEXT_PUBLIC_DEMO_MODE=true`.
 
 | Email | Name | Role |
 | --- | --- | --- |
-| `nusrat@teslapool.dev` | Nusrat | Passenger (has ride history, ৳1,000 TeslaPay) |
+| `nusrat@teslapool.dev` | Nusrat | Passenger (ride history; TeslaPay ৳943 after yesterday's pooled ride) |
 | `rafiq@teslapool.dev` | Rafiq | Passenger (has ride history) |
 | `shirin@teslapool.dev` | Shirin | Passenger (empty history on purpose) |
 | `jashim@teslapool.dev` | Jashim | Driver of **Bullet** (3 seats, online in Banani) |
@@ -311,7 +314,7 @@ Drivers are seeded only — driver onboarding means vehicle checks and is out of
 | GET | `/teslapay` | Passenger | Balance and full ledger |
 | PATCH | `/driver/status` | Driver | Go online/offline, set the current Zone |
 | GET | `/driver/trip` | Driver | The Driver's active Trip |
-| GET | `/driver/requests` | Driver | Compatible waiting requests in the current Zone |
+| GET | `/driver/requests` | Driver | Compatible Ride Requests still in `REQUESTED` for the current Zone |
 | POST | `/driver/requests/:id/accept` | Driver | Accept a request into the Trip |
 | GET | `/trips` | Driver | Trip history |
 | GET | `/trips/:id` | Driver | One Trip with passengers and Ride Events |
@@ -325,7 +328,7 @@ user's resource, `409` invalid transition or lost race, `422` bad input.
 
 ## Domain rules
 
-### Matching
+### Compatible
 
 A Ride Request is **Compatible** with a Trip when it shares the Trip's pickup
 Zone, its destination is within 3 km straight-line of every destination already
@@ -392,7 +395,7 @@ drift, and a receipt that adds up by hand.
 
 Bullet has one seat left. Nusrat and Shirin both tap Accept at the same instant,
 and both requests were read while that seat still looked free. The claim is one
-conditional statement inside the Accept transaction (ADR 0001):
+conditional statement inside the Accept transaction ([ADR 0001](docs/adr/0001-atomic-seat-claim.md)):
 
 ```sql
 UPDATE trips
@@ -433,9 +436,9 @@ is a queue per Zone feeding idempotent matchers, not a bigger lock.
 - **Polling, not WebSockets.** Ride state changes on the scale of seconds; a 3-second
   poll is simpler to operate and honest about freshness. Cost: a request per open
   tab, and updates land up to 3 seconds late.
-- **Driver-driven matching, not auto-assign.** A Driver chooses from Compatible
-  requests, which mirrors how three-wheelers actually fill up and keeps a human in
-  the loop. Cost: idle time if no Driver is online.
+- **Driver-driven Accept, not automatic assignment.** A Driver chooses which
+  Compatible Ride Requests to Accept, which mirrors how three-wheelers actually
+  fill up and keeps a human in the loop. Cost: idle time if no Driver is online.
 - **Fare locked at `STARTED`.** Passengers see a price before booking and it does
   not move afterwards, so a late cancellation does not silently change someone
   else's fare.
@@ -461,8 +464,8 @@ is a queue per Zone feeding idempotent matchers, not a bigger lock.
 
 ## Known limitations and next improvements
 
-- A stale Ride Request never expires; it waits in the Zone forever until a Driver
-  accepts or the Passenger cancels.
+- A stale Ride Request never expires; it stays `REQUESTED` in its Zone until a
+  Driver Accepts it or the Passenger cancels.
 - No push notifications — a Passenger learns about a match by polling.
 - The rate limiter trusts one proxy hop, but Vercel → Render is two, so behind the
   deployed setup client IPs can group at the edge and share a bucket. The real hop
