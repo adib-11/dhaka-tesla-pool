@@ -3,6 +3,8 @@ export type RequestStatus = 'REQUESTED' | 'MATCHED' | 'IN_PROGRESS' | 'COMPLETED
 export type TripStatus = 'ACCEPTED' | 'DRIVER_ARRIVED' | 'STARTED' | 'COMPLETED' | 'CANCELLED';
 export type PaymentMethod = 'CASH' | 'TESLAPAY';
 
+export type TeslapayTxType = 'TOP_UP' | 'RIDE_CHARGE';
+
 export const ACTIVE_REQUEST_STATUSES: RequestStatus[] = ['REQUESTED', 'MATCHED', 'IN_PROGRESS'];
 
 export type Zone = { id: number; name: string };
@@ -88,3 +90,14 @@ export type DriverTrip = {
   passengers: TripPassenger[];
   events?: RideEvent[];
 };
+
+export type TeslapayLedgerEntry = {
+  id: string;
+  type: TeslapayTxType;
+  amountPaisa: number;
+  balanceAfterPaisa: number;
+  createdAt: string;
+  ride: { id: string; pickup: Zone; dropoff: Zone } | null;
+};
+
+export type TeslapayLedger = { balancePaisa: number; entries: TeslapayLedgerEntry[] };
