@@ -5,11 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageMessage } from '@/components/PageMessage';
 import { RequireRole } from '@/components/RequireRole';
 import { StatusBadge } from '@/components/StatusBadge';
+import { Timeline } from '@/components/Timeline';
 import { api, taka } from '@/lib/api';
 import type { DriverTrip } from '@/lib/types';
 
 function TripDetail({ id }: { id: string }) {
-  const trip = useQuery({ queryKey: ['driver-trip', id], queryFn: () => api<DriverTrip>(`/trips/${id}`) });
+  const trip = useQuery({ queryKey: ['driver-trip', id], queryFn: () => api<DriverTrip>(`/trips/${id}`), refetchInterval: 3000 });
   if (trip.isPending) return <PageMessage>Loading trip…</PageMessage>;
   if (trip.isError) return <PageMessage>{trip.error.message}</PageMessage>;
   const t = trip.data;
@@ -34,6 +35,14 @@ function TripDetail({ id }: { id: string }) {
               </li>
             ))}
           </ul>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>What happened</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Timeline events={t.events ?? []} />
         </CardContent>
       </Card>
     </div>
