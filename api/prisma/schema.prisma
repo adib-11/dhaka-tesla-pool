@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PASSENGER
+  DRIVER
+}
+
+enum TripStatus {
+  ACCEPTED
+  DRIVER_ARRIVED
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+enum RequestStatus {
+  REQUESTED
+  MATCHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  TESLAPAY
+}
+
+enum EventType {
+  REQUESTED
+  ACCEPTED
+  JOINED_POOL
+  DRIVER_ARRIVED
+  STARTED
+  FARE_LOCKED
+  DROPPED_OFF
+  PAID
+  CANCELLED
+  REQUEUED
+  TRIP_COMPLETED
+}
+
+enum TeslapayTxType {
+  TOP_UP
+  RIDE_CHARGE
+}
+
+model User {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  role                 Role
+  name                 String
+  email                String   @unique
+  passwordHash         String   @map("password_hash")
+  teslapayBalancePaisa Int      @default(0) @map("teslapay_balance_paisa")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  tesla                Tesla?
+  rideRequests         RideRequest[]
+  trips                Trip[]
+  teslapayTransactions TeslapayTransaction[]
+  events               RideEvent[]
+
+  @@map("users")
+}
+
+model Zone {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+  lat  Float
+  lng  Float
+
+  teslas   Tesla[]
+  trips    Trip[]
+  pickups  RideRequest[] @relation("pickup")
+  dropoffs RideRequest[] @relation("dropoff")
+
+  @@map("zones")
+}
+
+model Tesla {
+  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId      String  @unique @map("driver_id") @db.Uuid
+  name          String
+  plate         String  @unique
+  capacity      Int
+  isOnline      Boolean @default(false) @map("is_online")
+  currentZoneId Int?    @map("current_zone_id")
+
+  driver      User   @relation(fields: [driverId], references: [id])
+  currentZone Zone?  @relation(fields: [currentZoneId], references: [id])
+  trips       Trip[]
+
+  @@map("teslas")
+}
+
+model Trip {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teslaId      String     @map("tesla_id") @db.Uuid
+  driverId     String     @map("driver_id") @db.Uuid
+  pickupZoneId Int        @map("pickup_zone_id")
+  status       TripStatus @default(ACCEPTED)
+  /// Snapshot of the Tesla's capacity: a CHECK constraint cannot read another table (ADR 0001).
+  capacity     Int
+  seatsTaken   Int        @default(0) @map("seats_taken")
+  isSolo       Boolean    @default(false) @map("is_solo")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  arrivedAt    DateTime?  @map("arrived_at") @db.Timestamptz
+  startedAt    DateTime?  @map("started_at") @db.Timestamptz
+  completedAt  DateTime?  @map("completed_at") @db.Timestamptz
+  cancelledAt  DateTime?  @map("cancelled_at") @db.Timestamptz
+
+  tesla      Tesla         @relation(fields: [teslaId], references: [id])
+  driver     User          @relation(fields: [driverId], references: [id])
+  pickupZone Zone          @relation(fields: [pickupZoneId], references: [id])
+  requests   RideRequest[]
+  events     RideEvent[]
+
+  @@index([driverId, createdAt])
+  @@map("trips")
+}
+
+model RideRequest {
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  passengerId         String        @map("passenger_id") @db.Uuid
+  tripId              String?       @map("trip_id") @db.Uuid
+  pickupZoneId        Int           @map("pickup_zone_id")
+  dropoffZoneId       Int           @map("dropoff_zone_id")
+  seats               Int
+  allowSharing        Boolean       @default(true) @map("allow_sharing")
+  paymentMethod       PaymentMethod @default(CASH) @map("payment_method")
+  status              RequestStatus @default(REQUESTED)
+  distanceM           Int           @map("distance_m")
+  estimatedSoloPaisa  Int           @map("estimated_solo_paisa")
+  baseFarePaisa       Int?          @map("base_fare_paisa")
+  distanceChargePaisa Int?          @map("distance_charge_paisa")
+  poolDiscountPaisa   Int?          @map("pool_discount_paisa")
+  finalFarePaisa      Int?          @map("final_fare_paisa")
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  matchedAt           DateTime?     @map("matched_at") @db.Timestamptz
+  startedAt           DateTime?     @map("started_at") @db.Timestamptz
+  completedAt         DateTime?     @map("completed_at") @db.Timestamptz
+  cancelledAt         DateTime?     @map("cancelled_at") @db.Timestamptz
+  paidAt              DateTime?     @map("paid_at") @db.Timestamptz
+
+  passenger            User                  @relation(fields: [passengerId], references: [id])
+  trip                 Trip?                 @relation(fields: [tripId], references: [id])
+  pickupZone           Zone                  @relation("pickup", fields: [pickupZoneId], references: [id])
+  dropoffZone          Zone                  @relation("dropoff", fields: [dropoffZoneId], references: [id])
+  events               RideEvent[]
+  teslapayTransactions TeslapayTransaction[]
+
+  @@index([passengerId, createdAt])
+  @@index([status, pickupZoneId])
+  @@index([tripId])
+  @@map("ride_requests")
+}
+
+model RideEvent {
+  id            Int       @id @default(autoincrement())
+  type          EventType
+  tripId        String?   @map("trip_id") @db.Uuid
+  rideRequestId String?   @map("ride_request_id") @db.Uuid
+  actorUserId   String?   @map("actor_user_id") @db.Uuid
+  fromStatus    String?   @map("from_status")
+  toStatus      String?   @map("to_status")
+  detail        Json?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  trip        Trip?        @relation(fields: [tripId], references: [id])
+  rideRequest RideRequest? @relation(fields: [rideRequestId], references: [id])
+  actor       User?        @relation(fields: [actorUserId], references: [id])
+
+  @@index([rideRequestId, id])
+  @@index([tripId, id])
+  @@map("ride_events")
+}
+
+model TeslapayTransaction {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String         @map("user_id") @db.Uuid
+  rideRequestId     String?        @map("ride_request_id") @db.Uuid
+  type              TeslapayTxType
+  amountPaisa       Int            @map("amount_paisa")
+  balanceAfterPaisa Int            @map("balance_after_paisa")
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  user        User         @relation(fields: [userId], references: [id])
+  rideRequest RideRequest? @relation(fields: [rideRequestId], references: [id])
+
+  @@unique([rideRequestId, type])
+  @@index([userId, createdAt])
+  @@map("teslapay_transactions")
+}
