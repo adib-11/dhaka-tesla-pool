@@ -65,3 +65,35 @@ export function passengerRideView(r: RideWithRelations, coRiders: number | null)
     },
   };
 }
+
+export const tripInclude = {
+  pickupZone: true,
+  requests: {
+    where: { status: { not: 'CANCELLED' } },
+    orderBy: { createdAt: 'asc' },
+    include: { passenger: { select: { name: true } }, dropoffZone: true },
+  },
+} satisfies Prisma.TripInclude;
+
+export type TripWithRelations = Prisma.TripGetPayload<{ include: typeof tripInclude }>;
+
+export function driverTripView(t: TripWithRelations) {
+  return {
+    id: t.id,
+    status: t.status,
+    capacity: t.capacity,
+    seatsTaken: t.seatsTaken,
+    isSolo: t.isSolo,
+    pickup: zoneView(t.pickupZone),
+    createdAt: t.createdAt,
+    passengers: t.requests.map((r) => ({
+      requestId: r.id,
+      passengerName: r.passenger.name,
+      seats: r.seats,
+      dropoff: zoneView(r.dropoffZone),
+      status: r.status,
+      paymentMethod: r.paymentMethod,
+      finalFarePaisa: r.finalFarePaisa,
+    })),
+  };
+}
