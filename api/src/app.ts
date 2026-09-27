@@ -7,6 +7,7 @@ import pinoHttp from 'pino-http';
 import { config } from './config';
 import { prisma } from './db';
 import { errorHandler } from './http/errors';
+import { authRouter } from './routes/auth';
 
 export const logger = pino({ enabled: config.NODE_ENV !== 'test' });
 
@@ -35,6 +36,7 @@ export function buildApp() {
   });
 
   // Routers are mounted here by later tasks.
+  app.use('/auth', authRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Route not found' });

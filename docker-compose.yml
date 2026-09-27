@@ -33,5 +33,17 @@ services:
       start_period: 30s
       retries: 5
 
+  web:
+    build:
+      context: ./web
+      args:
+        API_URL: http://api:4000
+        NEXT_PUBLIC_DEMO_MODE: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   pgdata:
