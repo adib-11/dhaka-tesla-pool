@@ -5,7 +5,7 @@ import { roadDistanceM } from '../domain/geo';
 import { canMoveRequest } from '../domain/transitions';
 import { conflict, isUniqueViolation, notFound, unprocessable } from '../http/errors';
 import { recordEvent } from './events';
-import { passengerRideView, rideInclude, zoneView } from './views';
+import { eventInclude, eventView, passengerRideView, rideInclude, zoneView } from './views';
 
 /** The Estimated Fare for a prospective Ride Request: always both the solo and the "if pooled" figure. */
 export async function estimateRide(pickupZoneId: number, dropoffZoneId: number, seats: number) {
@@ -69,12 +69,23 @@ export async function listPassengerRides(passengerId: string) {
 export async function getPassengerRide(passengerId: string, id: string) {
   const ride = await prisma.rideRequest.findFirst({ where: { id, passengerId }, include: rideInclude });
   if (!ride) throw notFound('Ride not found');
-  const coRiders = ride.tripId
-    ? await prisma.rideRequest.count({
-        where: { tripId: ride.tripId, id: { not: id }, status: { in: ['MATCHED', 'IN_PROGRESS', 'COMPLETED'] } },
-      })
-    : null;
-  return passengerRideView(ride, coRiders);
+  const [coRiders, events] = await Promise.all([
+    ride.tripId
+      ? prisma.rideRequest.count({
+          where: { tripId: ride.tripId, id: { not: id }, status: { in: ['MATCHED', 'IN_PROGRESS', 'COMPLETED'] } },
+        })
+      : null,
+    // Own ride's events plus trip-wide events (arrive, start, complete). Never another passenger's events:
+    // a cancelled Ride Request keeps its tripId, so it must not pick up events that happen after it left.
+    prisma.rideEvent.findMany({
+      where: {
+        OR: [{ rideRequestId: id }, ...(ride.tripId && ride.status !== 'CANCELLED' ? [{ tripId: ride.tripId, rideRequestId: null }] : [])],
+      },
+      include: eventInclude,
+      orderBy: { id: 'asc' },
+    }),
+  ]);
+  return { ...passengerRideView(ride, coRiders), events: events.map(eventView) };
 }
 
 export async function cancelRideRequest(passengerId: string, id: string) {

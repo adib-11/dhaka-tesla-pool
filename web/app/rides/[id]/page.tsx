@@ -6,6 +6,7 @@ import { FareReceipt } from '@/components/FareReceipt';
 import { PageMessage } from '@/components/PageMessage';
 import { RequireRole } from '@/components/RequireRole';
 import { StatusBadge } from '@/components/StatusBadge';
+import { Timeline } from '@/components/Timeline';
 import { api, km, taka } from '@/lib/api';
 import type { PassengerRide } from '@/lib/types';
 
@@ -35,6 +36,14 @@ function RideDetail({ id }: { id: string }) {
             </p>
           )}
           {r.fare ? <FareReceipt fare={r.fare} /> : <p>Estimated {taka(r.estimatedSoloPaisa)} solo</p>}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>What happened</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Timeline events={r.events ?? []} />
         </CardContent>
       </Card>
     </div>
