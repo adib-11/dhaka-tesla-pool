@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { PageMessage } from '@/components/PageMessage';
 import { selectClass, ZoneSelect } from '@/components/ZoneSelect';
 import { api, km, taka } from '@/lib/api';
-import type { FareEstimate, PassengerRide, Zone } from '@/lib/types';
+import type { FareEstimate, PassengerRide, PaymentMethod, Zone } from '@/lib/types';
 
 /** Picks two Zones and a seat count, then shows the Estimated Fare both solo and "if pooled". */
 export function RideRequestForm() {
@@ -18,6 +18,7 @@ export function RideRequestForm() {
   const [dropoffZoneId, setDropoff] = useState<number>();
   const [seats, setSeats] = useState(1);
   const [allowSharing, setAllowSharing] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
 
   const sameZone = pickupZoneId !== undefined && pickupZoneId === dropoffZoneId;
   const ready = pickupZoneId !== undefined && dropoffZoneId !== undefined && !sameZone;
@@ -29,7 +30,7 @@ export function RideRequestForm() {
   });
 
   const request = useMutation({
-    mutationFn: () => api<PassengerRide>('/ride-requests', { body: { pickupZoneId, dropoffZoneId, seats, allowSharing } }),
+    mutationFn: () => api<PassengerRide>('/ride-requests', { body: { pickupZoneId, dropoffZoneId, seats, allowSharing, paymentMethod } }),
     onSuccess: () => {
       toast.success('Ride requested');
       qc.invalidateQueries({ queryKey: ['rides'] });
@@ -72,6 +73,14 @@ export function RideRequestForm() {
             <input type="checkbox" checked={allowSharing} onChange={(e) => setAllowSharing(e.target.checked)} />
             Allow sharing (25% off if the Tesla is pooled)
           </label>
+
+          <div className="space-y-1">
+            <Label htmlFor="payment">Payment</Label>
+            <select id="payment" className={selectClass} value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}>
+              <option value="CASH">Cash</option>
+              <option value="TESLAPAY">TeslaPay</option>
+            </select>
+          </div>
 
           {ready &&
             (estimate.isPending ? (

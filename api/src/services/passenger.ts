@@ -35,6 +35,14 @@ export type NewRideRequest = {
 export async function createRideRequest(passengerId: string, input: NewRideRequest) {
   const estimate = await estimateRide(input.pickupZoneId, input.dropoffZoneId, input.seats);
   const id = await prisma.$transaction(async (tx) => {
+    if (input.paymentMethod === 'TESLAPAY') {
+      // The solo estimate is the most this ride can cost (pooling only discounts it), so a balance that
+      // covers it always covers the Final Fare at drop-off.
+      const passenger = await tx.user.findUniqueOrThrow({ where: { id: passengerId } });
+      if (passenger.teslapayBalancePaisa < estimate.solo.totalPaisa) {
+        throw unprocessable('Not enough TeslaPay balance for this ride; choose cash instead');
+      }
+    }
     const ride = await tx.rideRequest
       .create({ data: { passengerId, ...input, distanceM: estimate.distanceM, estimatedSoloPaisa: estimate.solo.totalPaisa } })
       .catch((err) => {

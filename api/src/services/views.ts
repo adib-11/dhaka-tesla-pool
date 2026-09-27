@@ -77,6 +77,28 @@ export const tripInclude = {
 
 export type TripWithRelations = Prisma.TripGetPayload<{ include: typeof tripInclude }>;
 
+export const teslapayLedgerInclude = {
+  rideRequest: { include: { pickupZone: true, dropoffZone: true } },
+} satisfies Prisma.TeslapayTransactionInclude;
+
+export type TeslapayLedgerRow = Prisma.TeslapayTransactionGetPayload<{ include: typeof teslapayLedgerInclude }>;
+
+/** One TeslaPay credit or charge, with the ride it paid for when it paid for one. */
+export function teslapayLedgerEntryView(r: TeslapayLedgerRow) {
+  return {
+    id: r.id,
+    type: r.type,
+    amountPaisa: r.amountPaisa,
+    balanceAfterPaisa: r.balanceAfterPaisa,
+    createdAt: r.createdAt,
+    ride: r.rideRequest && {
+      id: r.rideRequest.id,
+      pickup: zoneView(r.rideRequest.pickupZone),
+      dropoff: zoneView(r.rideRequest.dropoffZone),
+    },
+  };
+}
+
 export function driverTripView(t: TripWithRelations) {
   return {
     id: t.id,

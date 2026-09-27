@@ -21,7 +21,16 @@ function headline(r: PassengerRide) {
 
 export function ActiveRideCard({ rideId }: { rideId: string }) {
   const qc = useQueryClient();
-  const ride = useQuery({ queryKey: ['ride', rideId], queryFn: () => api<PassengerRide>(`/ride-requests/${rideId}`), refetchInterval: 3000 });
+  const ride = useQuery({
+    queryKey: ['ride', rideId],
+    queryFn: async () => {
+      const r = await api<PassengerRide>(`/ride-requests/${rideId}`);
+      // The TeslaPay charge lands with the drop-off, so refresh the header balance once it is paid.
+      if (r.paidAt) qc.invalidateQueries({ queryKey: ['me'] });
+      return r;
+    },
+    refetchInterval: 3000,
+  });
   const cancel = useMutation({
     mutationFn: () => api<PassengerRide>(`/ride-requests/${rideId}/cancel`, { method: 'POST' }),
     onSuccess: () => {

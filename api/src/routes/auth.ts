@@ -27,11 +27,22 @@ const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
 
 export const authRouter = Router();
 
+/** New Passengers start with this much TeslaPay, recorded as a single ledger row. */
+export const WELCOME_CREDIT_PAISA = 50_000; // ৳500
+
 authRouter.post('/signup', authLimiter, async (req, res) => {
   const body = Signup.parse(req.body);
   const passwordHash = await bcrypt.hash(body.password, 10);
-  const user = await prisma.user
-    .create({ data: { name: body.name, email: body.email, passwordHash, role: 'PASSENGER' } })
+  const user = await prisma
+    .$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: { name: body.name, email: body.email, passwordHash, role: 'PASSENGER', teslapayBalancePaisa: WELCOME_CREDIT_PAISA },
+      });
+      await tx.teslapayTransaction.create({
+        data: { userId: created.id, type: 'TOP_UP', amountPaisa: WELCOME_CREDIT_PAISA, balanceAfterPaisa: WELCOME_CREDIT_PAISA },
+      });
+      return created;
+    })
     .catch((err) => {
       throw isUniqueViolation(err) ? conflict('That email is already registered') : err;
     });

@@ -30,6 +30,7 @@ export function Header() {
                 <>
                   <Link href="/ride">Ride</Link>
                   <Link href="/rides">History</Link>
+                  <Link href="/teslapay">TeslaPay</Link>
                 </>
               ) : (
                 <>
