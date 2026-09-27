@@ -2,7 +2,7 @@
 
 Share a seat. Split the fare. Survive Dhaka traffic.
 
-**Live app:** https://dhaka-tesla-pool-ebon.vercel.app
+**Live app:** https://dhaka-tesla-pool-ruetcs.vercel.app
 **Live API health:** https://dhaka-tesla-pool-api-sgmc.onrender.com/health
 **Demo video:** _TODO(author) — link the ≤6-minute walkthrough here._
 
