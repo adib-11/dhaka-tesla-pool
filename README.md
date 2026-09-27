@@ -2,9 +2,9 @@
 
 Share a seat. Split the fare. Survive Dhaka traffic.
 
+**Live app:** https://dhaka-tesla-pool-ebon.vercel.app
+**Live API health:** https://dhaka-tesla-pool-api-sgmc.onrender.com/health
 **Demo video:** _TODO(author) — link the ≤6-minute walkthrough here._
-**Live app:** _TODO(author) — filled in after deploy._
-**Live API health:** _TODO(author) — filled in after deploy._
 
 > The API runs on a free instance that sleeps after 15 idle minutes. The first
 > request after a nap waits roughly 50 seconds while it wakes; every request
@@ -264,6 +264,19 @@ cd api && npm test
 `npm test` runs `prisma migrate deploy` against `tesla_pool_test` (created by
 `docker/postgres-init/01-test-db.sql`) and then the Vitest suites. Override the
 target with `TEST_DATABASE_URL` if you keep your test database elsewhere.
+
+### Deployment
+
+| Piece | Host | Settings |
+| --- | --- | --- |
+| Database | Neon (free), `aws-ap-southeast-1` (Singapore, closest to Dhaka) | Use the **direct** (non-pooled) connection string ending in `?sslmode=require`; Prisma migrations need a direct connection |
+| API | Render (free web service) | Root directory `api`, runtime Docker, health check path `/health`, branch `release/v1.0.0`; env `DATABASE_URL`, `JWT_SECRET` (`openssl rand -base64 48`) and `COOKIE_SECURE=true`. The container runs `prisma migrate deploy`, then the idempotent seed, then the server, so the demo cast exists on first boot |
+| Web | Vercel (Hobby) | Root directory `web`; build-time env `API_URL=https://dhaka-tesla-pool-api-sgmc.onrender.com` and `NEXT_PUBLIC_DEMO_MODE=true`. Both are read during `next build`, so the `/api/*` rewrite and the demo buttons are baked into the output |
+
+`COOKIE_SECURE` must be `true` wherever the app is served over HTTPS; leave it
+`false` for `http://localhost` so Safari keeps the cookie. `API_URL` is required
+for a production build — `next.config.ts` throws if it is missing, which turns a
+silently broken rewrite into a failed build.
 
 ## Demo credentials
 
