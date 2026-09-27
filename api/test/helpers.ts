@@ -23,6 +23,10 @@ export async function loginAs(who: keyof typeof CAST): Promise<Agent> {
   return agent;
 }
 
+export async function goOnline(agent: Agent, zone: string) {
+  await agent.patch('/driver/status').send({ isOnline: true, currentZoneId: await zoneId(zone) }).expect(200);
+}
+
 export async function requestRide(agent: Agent, from: string, to: string, extra: Record<string, unknown> = {}) {
   const res = await agent
     .post('/ride-requests')
