@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireRole } from '../http/auth';
-import { getActiveTrip, listCompatibleRequests, setDriverStatus } from '../services/driver';
+import { idParam } from '../http/errors';
+import { acceptRideRequest, getActiveTrip, listCompatibleRequests, setDriverStatus } from '../services/driver';
 
 const DriverStatus = z.object({ isOnline: z.boolean(), currentZoneId: z.number().int() });
 
@@ -18,4 +19,8 @@ driverRouter.get('/trip', async (req, res) => {
 
 driverRouter.get('/requests', async (req, res) => {
   res.json(await listCompatibleRequests(req.user!.id));
+});
+
+driverRouter.post('/requests/:id/accept', async (req, res) => {
+  res.json(await acceptRideRequest(req.user!.id, idParam(req.params.id, 'Ride request not found')));
 });

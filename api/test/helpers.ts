@@ -34,3 +34,13 @@ export async function requestRide(agent: Agent, from: string, to: string, extra:
     .expect(201);
   return res.body.id as string;
 }
+
+/** The Banani story: Nusrat (to Mohakhali) and Rafiq (to Gulshan 1) share Bullet. */
+export async function poolNusratAndRafiq(nusratExtra: Record<string, unknown> = {}) {
+  const [nusrat, rafiq, jashim] = await Promise.all([loginAs('nusrat'), loginAs('rafiq'), loginAs('jashim')]);
+  const n = await requestRide(nusrat, 'Banani', 'Mohakhali', nusratExtra);
+  const r = await requestRide(rafiq, 'Banani', 'Gulshan 1');
+  const trip = await jashim.post(`/driver/requests/${n}/accept`).expect(200);
+  await jashim.post(`/driver/requests/${r}/accept`).expect(200);
+  return { nusrat, rafiq, jashim, n, r, tripId: trip.body.id as string };
+}

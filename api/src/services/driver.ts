@@ -1,7 +1,8 @@
 import type { Prisma, TripStatus } from '@prisma/client';
 import { prisma } from '../db';
-import { isCompatible, type TripSnapshot } from '../domain/compatibility';
+import { destinationsCompatible, isCompatible, type TripSnapshot } from '../domain/compatibility';
 import { conflict, notFound, unprocessable } from '../http/errors';
+import { recordEvent } from './events';
 import { driverTripView, meView, tripInclude, zoneView } from './views';
 
 export const ACTIVE_TRIP_STATUSES: TripStatus[] = ['ACCEPTED', 'DRIVER_ARRIVED', 'STARTED'];
@@ -74,4 +75,66 @@ export async function getDriverTrip(driverId: string, tripId: string) {
 export async function listDriverTrips(driverId: string) {
   const trips = await prisma.trip.findMany({ where: { driverId }, include: tripInclude, orderBy: { createdAt: 'desc' }, take: 50 });
   return trips.map(driverTripView);
+}
+
+export async function acceptRideRequest(driverId: string, requestId: string) {
+  const tripId = await prisma.$transaction(async (tx) => {
+    const tesla = await tx.tesla.findUniqueOrThrow({ where: { driverId } });
+    if (!tesla.isOnline) throw conflict('Go online before accepting rides');
+    const ride = await tx.rideRequest.findUnique({ where: { id: requestId }, include: { dropoffZone: true } });
+    if (!ride) throw notFound('Ride request not found');
+    if (ride.pickupZoneId !== tesla.currentZoneId) throw conflict('This passenger is not in your current zone');
+
+    // Reuse the Driver's active Trip or open one. With trips_one_active_per_driver,
+    // a concurrent second INSERT waits for the first and then does nothing.
+    await tx.$executeRaw`
+      INSERT INTO trips (tesla_id, driver_id, pickup_zone_id, capacity)
+      VALUES (${tesla.id}::uuid, ${driverId}::uuid, ${ride.pickupZoneId}, ${tesla.capacity})
+      ON CONFLICT (driver_id) WHERE status IN ('ACCEPTED', 'DRIVER_ARRIVED', 'STARTED') DO NOTHING`;
+    const trip = await tx.trip.findFirstOrThrow({ where: { driverId, status: { in: ACTIVE_TRIP_STATUSES } } });
+
+    // Conditional flip: if another Driver got here first, zero rows change.
+    const taken = await tx.rideRequest.updateMany({
+      where: { id: requestId, status: 'REQUESTED' },
+      data: { status: 'MATCHED', tripId: trip.id, matchedAt: new Date() },
+    });
+    if (taken.count === 0) throw conflict('This ride was already taken or cancelled');
+
+    // ADR 0001: one conditional UPDATE checks and claims the seats atomically, and locks the Trip row.
+    const claimed = await tx.$queryRaw<{ seats_taken: number }[]>`
+      UPDATE trips
+         SET seats_taken = seats_taken + ${ride.seats},
+             is_solo     = is_solo OR ${!ride.allowSharing}
+       WHERE id = ${trip.id}::uuid
+         AND status = 'ACCEPTED'
+         AND pickup_zone_id = ${ride.pickupZoneId}
+         AND seats_taken + ${ride.seats} <= capacity
+         AND (seats_taken = 0 OR (NOT is_solo AND ${ride.allowSharing}))
+       RETURNING seats_taken`;
+    if (claimed.length === 0) {
+      throw conflict(`${tesla.name} cannot take this ride: not enough free seats, a solo ride, or the trip is already underway`);
+    }
+
+    // Checked after the claim: every Accept takes this same seat UPDATE first, so a competing
+    // Accept on this Trip is blocked on the row lock until we commit and cannot slip in unseen.
+    const others = await tx.rideRequest.findMany({
+      where: { tripId: trip.id, status: 'MATCHED', id: { not: requestId } },
+      include: { dropoffZone: true },
+    });
+    if (!destinationsCompatible(others.map((o) => o.dropoffZone), ride.dropoffZone)) {
+      throw conflict('Destination is too far from the other passengers on this trip');
+    }
+
+    await recordEvent(tx, {
+      type: others.length ? 'JOINED_POOL' : 'ACCEPTED',
+      tripId: trip.id,
+      rideRequestId: requestId,
+      actorUserId: driverId,
+      fromStatus: 'REQUESTED',
+      toStatus: 'MATCHED',
+      detail: { seatsTaken: claimed[0].seats_taken, capacity: trip.capacity },
+    });
+    return trip.id;
+  });
+  return getDriverTrip(driverId, tripId);
 }

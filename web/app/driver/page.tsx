@@ -1,5 +1,6 @@
 'use client';
 import { CompatibleRequests } from '@/components/CompatibleRequests';
+import { CurrentTripPanel } from '@/components/CurrentTripPanel';
 import { DriverStatusCard } from '@/components/DriverStatusCard';
 import { PageMessage } from '@/components/PageMessage';
 import { RequireRole } from '@/components/RequireRole';
@@ -11,6 +12,7 @@ function DriverHome() {
   return (
     <div className="space-y-4">
       <DriverStatusCard tesla={tesla} />
+      <CurrentTripPanel />
       <CompatibleRequests online={tesla.isOnline} />
     </div>
   );
