@@ -22,3 +22,11 @@ export async function loginAs(who: keyof typeof CAST): Promise<Agent> {
   await agent.post('/auth/login').send({ email: CAST[who].email, password: DEMO_PASSWORD }).expect(200);
   return agent;
 }
+
+export async function requestRide(agent: Agent, from: string, to: string, extra: Record<string, unknown> = {}) {
+  const res = await agent
+    .post('/ride-requests')
+    .send({ pickupZoneId: await zoneId(from), dropoffZoneId: await zoneId(to), ...extra })
+    .expect(201);
+  return res.body.id as string;
+}

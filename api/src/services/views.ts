@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 import { unauthorized } from '../http/errors';
 
@@ -20,6 +21,47 @@ export async function meView(userId: string) {
       capacity: u.tesla.capacity,
       isOnline: u.tesla.isOnline,
       currentZoneId: u.tesla.currentZoneId,
+    },
+  };
+}
+
+export const rideInclude = {
+  pickupZone: true,
+  dropoffZone: true,
+  trip: { include: { tesla: true, driver: { select: { name: true } } } },
+} satisfies Prisma.RideRequestInclude;
+
+type RideWithRelations = Prisma.RideRequestGetPayload<{ include: typeof rideInclude }>;
+
+/** What one Passenger may see about their own ride: never other passengers' names or fares. */
+export function passengerRideView(r: RideWithRelations, coRiders: number | null) {
+  return {
+    id: r.id,
+    status: r.status,
+    seats: r.seats,
+    allowSharing: r.allowSharing,
+    paymentMethod: r.paymentMethod,
+    pickup: zoneView(r.pickupZone),
+    dropoff: zoneView(r.dropoffZone),
+    distanceM: r.distanceM,
+    estimatedSoloPaisa: r.estimatedSoloPaisa,
+    fare:
+      r.finalFarePaisa === null
+        ? null
+        : {
+            basePaisa: r.baseFarePaisa!,
+            distanceChargePaisa: r.distanceChargePaisa!,
+            poolDiscountPaisa: r.poolDiscountPaisa!,
+            finalFarePaisa: r.finalFarePaisa,
+          },
+    paidAt: r.paidAt,
+    createdAt: r.createdAt,
+    trip: r.trip && {
+      status: r.trip.status,
+      driverName: r.trip.driver.name,
+      teslaName: r.trip.tesla.name,
+      plate: r.trip.tesla.plate,
+      coRiders,
     },
   };
 }
