@@ -11,7 +11,7 @@ function PassengerHome() {
         <CardTitle>Hello, {me?.name}</CardTitle>
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">
-        Book a Tesla from one Zone to another, share the seats, and pay only your own fare.
+        Request a Tesla from one Zone to another, share the seats, and pay only your own fare.
       </CardContent>
     </Card>
   );

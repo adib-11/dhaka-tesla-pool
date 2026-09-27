@@ -39,7 +39,8 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     return;
   }
   if (err?.type === 'entity.parse.failed') {
-    res.status(400).json({ error: 'Malformed JSON' });
+    // Unparseable JSON is still bad input, and the contract maps bad input to 422.
+    res.status(422).json({ error: 'Malformed JSON' });
     return;
   }
   req.log.error({ err }, 'unhandled error');

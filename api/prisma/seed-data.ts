@@ -85,48 +85,48 @@ export async function seedHistory(db: Db) {
     },
   });
 
-  const riders = [
+  const passengers = [
     { user: nusrat, to: 'Mohakhali', requested: '08:41', droppedOff: '09:01', paymentMethod: 'TESLAPAY' as const },
     { user: rafiq, to: 'Gulshan 1', requested: '08:43', droppedOff: '09:08', paymentMethod: 'CASH' as const },
   ];
-  const rides = [];
-  for (const r of riders) {
-    const distanceM = roadDistanceM(point('Banani'), point(r.to));
+  const requests = [];
+  for (const p of passengers) {
+    const distanceM = roadDistanceM(point('Banani'), point(p.to));
     const fare = calculateFare({ distanceM, seats: 1, pooled: true });
-    const ride = await db.rideRequest.create({
+    const request = await db.rideRequest.create({
       data: {
-        passengerId: r.user.id, tripId: trip.id, pickupZoneId: zone.Banani, dropoffZoneId: zone[r.to], seats: 1,
-        paymentMethod: r.paymentMethod, status: 'COMPLETED', distanceM,
+        passengerId: p.user.id, tripId: trip.id, pickupZoneId: zone.Banani, dropoffZoneId: zone[p.to], seats: 1,
+        paymentMethod: p.paymentMethod, status: 'COMPLETED', distanceM,
         estimatedSoloPaisa: calculateFare({ distanceM, seats: 1, pooled: false }).totalPaisa,
         baseFarePaisa: fare.basePaisa, distanceChargePaisa: fare.distanceChargePaisa, poolDiscountPaisa: fare.poolDiscountPaisa, finalFarePaisa: fare.totalPaisa,
-        createdAt: at(r.requested), matchedAt: at('08:44'), startedAt: at('08:50'), completedAt: at(r.droppedOff), paidAt: at(r.droppedOff),
+        createdAt: at(p.requested), matchedAt: at('08:44'), startedAt: at('08:50'), completedAt: at(p.droppedOff), paidAt: at(p.droppedOff),
       },
     });
-    rides.push({ ...r, ride, fare });
+    requests.push({ ...p, request, fare });
   }
-  const [n, f] = rides;
+  const [nusratRequest, rafiqRequest] = requests;
 
-  const balanceAfter = STARTING_BALANCE_PAISA - n.fare.totalPaisa;
+  const balanceAfter = STARTING_BALANCE_PAISA - nusratRequest.fare.totalPaisa;
   await db.user.update({ where: { id: nusrat.id }, data: { teslapayBalancePaisa: balanceAfter } });
   await db.teslapayTransaction.create({
-    data: { userId: nusrat.id, rideRequestId: n.ride.id, type: 'RIDE_CHARGE', amountPaisa: -n.fare.totalPaisa, balanceAfterPaisa: balanceAfter, createdAt: at('09:01') },
+    data: { userId: nusrat.id, rideRequestId: nusratRequest.request.id, type: 'RIDE_CHARGE', amountPaisa: -nusratRequest.fare.totalPaisa, balanceAfterPaisa: balanceAfter, createdAt: at('09:01') },
   });
 
   // Inserted in chronological order: ride_events.id is the timeline order.
   await db.rideEvent.createMany({
     data: [
-      { type: 'REQUESTED', rideRequestId: n.ride.id, actorUserId: nusrat.id, toStatus: 'REQUESTED', createdAt: at('08:41') },
-      { type: 'REQUESTED', rideRequestId: f.ride.id, actorUserId: rafiq.id, toStatus: 'REQUESTED', createdAt: at('08:43') },
-      { type: 'ACCEPTED', tripId: trip.id, rideRequestId: n.ride.id, actorUserId: jashim.id, fromStatus: 'REQUESTED', toStatus: 'MATCHED', detail: { seatsTaken: 1, capacity: 3 }, createdAt: at('08:44') },
-      { type: 'JOINED_POOL', tripId: trip.id, rideRequestId: f.ride.id, actorUserId: jashim.id, fromStatus: 'REQUESTED', toStatus: 'MATCHED', detail: { seatsTaken: 2, capacity: 3 }, createdAt: at('08:44') },
+      { type: 'REQUESTED', rideRequestId: nusratRequest.request.id, actorUserId: nusrat.id, toStatus: 'REQUESTED', createdAt: at('08:41') },
+      { type: 'REQUESTED', rideRequestId: rafiqRequest.request.id, actorUserId: rafiq.id, toStatus: 'REQUESTED', createdAt: at('08:43') },
+      { type: 'ACCEPTED', tripId: trip.id, rideRequestId: nusratRequest.request.id, actorUserId: jashim.id, fromStatus: 'REQUESTED', toStatus: 'MATCHED', detail: { seatsTaken: 1, capacity: 3 }, createdAt: at('08:44') },
+      { type: 'JOINED_POOL', tripId: trip.id, rideRequestId: rafiqRequest.request.id, actorUserId: jashim.id, fromStatus: 'REQUESTED', toStatus: 'MATCHED', detail: { seatsTaken: 2, capacity: 3 }, createdAt: at('08:44') },
       { type: 'DRIVER_ARRIVED', tripId: trip.id, actorUserId: jashim.id, fromStatus: 'ACCEPTED', toStatus: 'DRIVER_ARRIVED', createdAt: at('08:49') },
       { type: 'STARTED', tripId: trip.id, actorUserId: jashim.id, fromStatus: 'DRIVER_ARRIVED', toStatus: 'STARTED', createdAt: at('08:50') },
-      { type: 'FARE_LOCKED', tripId: trip.id, rideRequestId: n.ride.id, actorUserId: jashim.id, fromStatus: 'MATCHED', toStatus: 'IN_PROGRESS', detail: { ...n.fare, pooled: true, passengersOnTrip: 2 }, createdAt: at('08:50') },
-      { type: 'FARE_LOCKED', tripId: trip.id, rideRequestId: f.ride.id, actorUserId: jashim.id, fromStatus: 'MATCHED', toStatus: 'IN_PROGRESS', detail: { ...f.fare, pooled: true, passengersOnTrip: 2 }, createdAt: at('08:50') },
-      { type: 'DROPPED_OFF', tripId: trip.id, rideRequestId: n.ride.id, actorUserId: jashim.id, fromStatus: 'IN_PROGRESS', toStatus: 'COMPLETED', createdAt: at('09:01') },
-      { type: 'PAID', tripId: trip.id, rideRequestId: n.ride.id, actorUserId: jashim.id, detail: { method: 'TESLAPAY', amountPaisa: n.fare.totalPaisa, fellBackToCash: false }, createdAt: at('09:01') },
-      { type: 'DROPPED_OFF', tripId: trip.id, rideRequestId: f.ride.id, actorUserId: jashim.id, fromStatus: 'IN_PROGRESS', toStatus: 'COMPLETED', createdAt: at('09:08') },
-      { type: 'PAID', tripId: trip.id, rideRequestId: f.ride.id, actorUserId: jashim.id, detail: { method: 'CASH', amountPaisa: f.fare.totalPaisa, fellBackToCash: false }, createdAt: at('09:08') },
+      { type: 'FARE_LOCKED', tripId: trip.id, rideRequestId: nusratRequest.request.id, actorUserId: jashim.id, fromStatus: 'MATCHED', toStatus: 'IN_PROGRESS', detail: { ...nusratRequest.fare, pooled: true, passengersOnTrip: 2 }, createdAt: at('08:50') },
+      { type: 'FARE_LOCKED', tripId: trip.id, rideRequestId: rafiqRequest.request.id, actorUserId: jashim.id, fromStatus: 'MATCHED', toStatus: 'IN_PROGRESS', detail: { ...rafiqRequest.fare, pooled: true, passengersOnTrip: 2 }, createdAt: at('08:50') },
+      { type: 'DROPPED_OFF', tripId: trip.id, rideRequestId: nusratRequest.request.id, actorUserId: jashim.id, fromStatus: 'IN_PROGRESS', toStatus: 'COMPLETED', createdAt: at('09:01') },
+      { type: 'PAID', tripId: trip.id, rideRequestId: nusratRequest.request.id, actorUserId: jashim.id, detail: { method: 'TESLAPAY', amountPaisa: nusratRequest.fare.totalPaisa, fellBackToCash: false }, createdAt: at('09:01') },
+      { type: 'DROPPED_OFF', tripId: trip.id, rideRequestId: rafiqRequest.request.id, actorUserId: jashim.id, fromStatus: 'IN_PROGRESS', toStatus: 'COMPLETED', createdAt: at('09:08') },
+      { type: 'PAID', tripId: trip.id, rideRequestId: rafiqRequest.request.id, actorUserId: jashim.id, detail: { method: 'CASH', amountPaisa: rafiqRequest.fare.totalPaisa, fellBackToCash: false }, createdAt: at('09:08') },
       { type: 'TRIP_COMPLETED', tripId: trip.id, actorUserId: jashim.id, fromStatus: 'STARTED', toStatus: 'COMPLETED', createdAt: at('09:08') },
     ],
   });
